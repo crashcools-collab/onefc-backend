@@ -1158,6 +1158,7 @@ body{background:var(--bg);color:var(--txt);font-family:var(--fb);line-height:1.6
               <button class="tx-btn secondary" onclick="txExport('photo')">📤 Exporter</button>
               <button class="tx-btn secondary" onclick="txUploadTikTok()">🎵 Uploader TikTok</button>
               <button class="tx-btn secondary" onclick="txSendToFlow()">⚡ Envoyer FlowCraft</button>
+              <button class="tx-btn secondary" onclick="txOpenDownloads()" title="Ouvrir le dossier Téléchargements">📁 Ouvrir dossier</button>
             </div>
           </div>
           <div id="txPhotoEmpty" style="text-align:center;padding:40px;color:var(--dim);font-size:13px">
@@ -1256,6 +1257,7 @@ body{background:var(--bg);color:var(--txt);font-family:var(--fb);line-height:1.6
             <div style="display:flex;gap:8px;flex-wrap:wrap">
               <button class="tx-btn secondary" onclick="txExport('video')">📤 Télécharger</button>
               <button class="tx-btn primary" onclick="txUploadTikTok()">🎵 Publier TikTok</button>
+              <button class="tx-btn secondary" onclick="txOpenDownloads()" title="Ouvrir le dossier Téléchargements">📁 Ouvrir dossier</button>
             </div>
           </div>
           <div id="txVideoEmpty" style="text-align:center;padding:40px;color:var(--dim);font-size:13px">
@@ -3107,23 +3109,33 @@ async function txGenerateRealImages(variants){
       <div style="font-size:10px;color:var(--dim)">Génération en cours...</div>`;
     container.appendChild(card);
 
-    // Appel Replicate — modèle Flux-2-Pro (meilleure qualité)
+    // Appel Replicate via backend Railway (évite CORS) ou direct
     try{
-      const r=await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-2-pro/predictions',{
-        method:'POST',
-        headers:{'Content-Type':'application/json','Authorization':`Bearer ${settings.replicateKey}`},
-        body:JSON.stringify({input:{
-          prompt:v.prompt,
-          negative_prompt:v.negative||'blurry, low quality, watermark',
-          resolution:'1 MP',
-          aspect_ratio:'1:1',
-          output_format:'webp',
-          output_quality:90,
-          safety_tolerance:2
-        }})
-      });
-      const pred=await r.json();
-      if(pred.error)throw new Error(pred.error);
+      let pred;
+      if(settings.backendUrl){
+        // Via backend Railway — pas de CORS
+        const r=await fetch(`${settings.backendUrl}/proxy`,{
+          method:'POST',
+          headers:{'Content-Type':'application/json','x-onefc-key':settings.replicateKey||''},
+          body:JSON.stringify({
+            url:'https://api.replicate.com/v1/models/black-forest-labs/flux-2-pro/predictions',
+            method:'POST',
+            headers:{'Authorization':`Bearer ${settings.replicateKey}`,'Content-Type':'application/json'},
+            body:{input:{prompt:v.prompt,negative_prompt:v.negative||'blurry, low quality, watermark',resolution:'1 MP',aspect_ratio:'1:1',output_format:'webp',output_quality:90,safety_tolerance:2}}
+          })
+        });
+        const d=await r.json();
+        pred=d.data;
+      } else {
+        // Direct (fonctionne en local)
+        const r=await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-2-pro/predictions',{
+          method:'POST',
+          headers:{'Content-Type':'application/json','Authorization':`Bearer ${settings.replicateKey}`},
+          body:JSON.stringify({input:{prompt:v.prompt,negative_prompt:v.negative||'blurry, low quality, watermark',resolution:'1 MP',aspect_ratio:'1:1',output_format:'webp',output_quality:90,safety_tolerance:2}})
+        });
+        pred=await r.json();
+      }
+      if(pred?.error)throw new Error(pred.error);
 
       // Poll jusqu'à ce que l'image soit prête
       const imgUrl=await txPollReplicate(pred.id||pred.urls?.get);
@@ -3148,13 +3160,24 @@ async function txGenerateRealImages(variants){
 }
 
 async function txPollReplicate(urlOrId){
-  const url=urlOrId.startsWith('http')?urlOrId:`https://api.replicate.com/v1/predictions/${urlOrId}`;
+  const predUrl=urlOrId.startsWith('http')?urlOrId:`https://api.replicate.com/v1/predictions/${urlOrId}`;
   for(let i=0;i<60;i++){
     await new Promise(r=>setTimeout(r,2000));
-    const r=await fetch(url,{headers:{'Authorization':`Bearer ${settings.replicateKey}`}});
-    const d=await r.json();
-    if(d.status==='succeeded')return d.output?.[0]||d.output;
-    if(d.status==='failed')throw new Error(d.error||'Génération échouée');
+    let d;
+    if(settings.backendUrl){
+      const r=await fetch(`${settings.backendUrl}/proxy`,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({url:predUrl,method:'GET',headers:{'Authorization':`Bearer ${settings.replicateKey}`}})
+      });
+      const resp=await r.json();
+      d=resp.data;
+    } else {
+      const r=await fetch(predUrl,{headers:{'Authorization':`Bearer ${settings.replicateKey}`}});
+      d=await r.json();
+    }
+    if(d?.status==='succeeded')return d.output?.[0]||d.output;
+    if(d?.status==='failed')throw new Error(d.error||'Génération échouée');
   }
   throw new Error('Timeout — génération trop longue');
 }
@@ -3268,19 +3291,30 @@ Format markdown.`;
 }
 
 async function txGenerateRealVideo(prompt){
-  // Utilise Stable Video Diffusion via Replicate
-  const r=await fetch('https://api.replicate.com/v1/models/stability-ai/stable-video-diffusion/predictions',{
-    method:'POST',
-    headers:{'Content-Type':'application/json','Authorization':`Bearer ${settings.replicateKey}`},
-    body:JSON.stringify({input:{
-      image:`https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=576&nologo=true`,
-      motion_bucket_id:127,
-      fps:24,
-      decoding_t:14
-    }})
-  });
-  const pred=await r.json();
-  if(pred.error)throw new Error(pred.error);
+  const imageUrl=`https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=576&nologo=true`;
+  const body={input:{image:imageUrl,motion_bucket_id:127,fps:24,decoding_t:14}};
+  let pred;
+  if(settings.backendUrl){
+    const r=await fetch(`${settings.backendUrl}/proxy`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        url:'https://api.replicate.com/v1/models/stability-ai/stable-video-diffusion/predictions',
+        method:'POST',
+        headers:{'Authorization':`Bearer ${settings.replicateKey}`,'Content-Type':'application/json'},
+        body
+      })
+    });
+    const d=await r.json();pred=d.data;
+  } else {
+    const r=await fetch('https://api.replicate.com/v1/models/stability-ai/stable-video-diffusion/predictions',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${settings.replicateKey}`},
+      body:JSON.stringify(body)
+    });
+    pred=await r.json();
+  }
+  if(pred?.error)throw new Error(pred.error);
   return await txPollReplicate(pred.id||pred.urls?.get);
 }
 
@@ -3468,6 +3502,19 @@ function txLoadExample(type){
 
 // ── UTILS ──
 function txExport(type){showToast('s',`📤 Export ${type} — fichier prêt (simulation) !`);}
+function txOpenDownloads(){
+  // Sur PC — ouvre l'explorateur sur le dossier Téléchargements
+  showToast('i','📁 Tes fichiers sont dans le dossier Téléchargements');
+  // Astuce : crée un lien invisible vers le dossier downloads
+  try{
+    // Chrome/Edge — ouvre le gestionnaire de téléchargements
+    window.open('chrome://downloads','_blank');
+  }catch(e){}
+  // Fallback — affiche le chemin
+  setTimeout(()=>{
+    showToast('i','📁 PC : C:\\Users\\TOI\\Downloads — Mac : ~/Downloads');
+  },1500);
+}
 function txUploadTikTok(){showToast('i','🎵 Upload TikTok — Configure l\'API TikTok Business dans Paramètres');}
 function txSendToFlow(){
   txGenPromptWorkflow();
