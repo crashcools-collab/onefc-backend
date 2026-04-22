@@ -12,7 +12,7 @@ const ADMIN_PWD = process.env.ADMIN_PWD || '090219';
 
 function checkAuth(req, res, next) {
   // Les webhooks et routes API restent accessibles sans mot de passe
-  const publicRoutes = ['/webhook/', '/status'];
+  const publicRoutes = ['/webhook/', '/status', '/proxy', '/replicate'];
   if (publicRoutes.some(r => req.path.startsWith(r))) return next();
   
   // Vérifie le cookie de session
@@ -233,20 +233,63 @@ app.post('/sheets/read', async (req, res) => {
 // PROXY CORS — Pour éviter les erreurs CORS
 // ═══════════════════════════════════════════
 
+// ═══════════════════════════════════════════
+// PROXY CORS — Public (pas de auth requise)
+// ═══════════════════════════════════════════
+
 app.post('/proxy', async (req, res) => {
   const { url, method = 'POST', headers = {}, body } = req.body;
   if (!url) return res.status(400).json({ ok: false, message: 'URL requise' });
 
   try {
-    const response = await fetch(url, {
+    const opts = {
       method,
       headers: { 'Content-Type': 'application/json', ...headers },
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    };
+    if (method !== 'GET' && body !== undefined) {
+      opts.body = typeof body === 'string' ? body : JSON.stringify(body);
+    }
+    const response = await fetch(url, opts);
     const text = await response.text();
     let data;
     try { data = JSON.parse(text); } catch { data = { text }; }
     res.status(response.status).json({ ok: response.ok, status: response.status, data });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
+// ═══ ROUTE DÉDIÉE REPLICATE ═══
+app.post('/replicate', async (req, res) => {
+  const { endpoint, input, apiKey } = req.body;
+  if (!apiKey) return res.status(400).json({ ok: false, message: 'apiKey requis' });
+
+  try {
+    // Créer la prédiction
+    const r = await fetch(`https://api.replicate.com/v1/models/${endpoint}/predictions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({ input })
+    });
+    const pred = await r.json();
+    if (pred.error) return res.status(400).json({ ok: false, message: pred.error });
+
+    // Poll jusqu'au résultat (max 120s)
+    const predId = pred.id;
+    for (let i = 0; i < 60; i++) {
+      await new Promise(r => setTimeout(r, 2000));
+      const poll = await fetch(`https://api.replicate.com/v1/predictions/${predId}`, {
+        headers: { 'Authorization': `Bearer ${apiKey}` }
+      });
+      const result = await poll.json();
+      if (result.status === 'succeeded') {
+        return res.json({ ok: true, output: result.output });
+      }
+      if (result.status === 'failed') {
+        return res.status(500).json({ ok: false, message: result.error || 'Génération échouée' });
+      }
+    }
+    res.status(408).json({ ok: false, message: 'Timeout — génération trop longue' });
   } catch (e) {
     res.status(500).json({ ok: false, message: e.message });
   }
