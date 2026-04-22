@@ -975,6 +975,11 @@ body{background:var(--bg);color:var(--txt);font-family:var(--fb);line-height:1.6
         <p style="font-size:11px;color:var(--dim);margin-bottom:14px;line-height:1.6">Sans token = mode simulation (logs uniquement). Avec token = exécution réelle. Les champs vides sont ignorés.</p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
           <div class="setting-row">
+            <label class="setting-label">🎨 Replicate (Photos & Vidéos IA)</label>
+            <input type="password" class="setting-input" id="replicateKey" placeholder="r8_..." oninput="settings.replicateKey=this.value;saveSettings()">
+            <div class="setting-help">replicate.com → Account Settings → API Tokens · <strong style="color:var(--grn)">$5 gratuit à l'inscription</strong></div>
+          </div>
+          <div class="setting-row">
             <label class="setting-label">💬 Slack Bot Token</label>
             <input type="password" class="setting-input" id="slackToken" placeholder="xoxb-..." oninput="settings.slackToken=this.value;saveSettings()">
             <div class="setting-help">console.slack.com → Apps → OAuth Token</div>
@@ -1952,7 +1957,7 @@ const settings={
   // Tokens intégrations
   slackToken:'',resendKey:'',sendgridKey:'',notionToken:'',
   airtableToken:'',telegramToken:'',stripeKey:'',
-  backendUrl:''
+  backendUrl:'',replicateKey:''
 };
 let chatHistory=[],courses=[],currentCourseId=null,currentFilter='tous',currentCoursTab='edit';
 
@@ -2934,7 +2939,7 @@ renderCoursList();
   $('rateSlider').value=settings.rate;$('rateValue').textContent=settings.rate.toFixed(2);
   $('pitchSlider').value=settings.pitch;$('pitchValue').textContent=settings.pitch.toFixed(2);
   // Restaurer les tokens intégrations
-  ['slackToken','resendKey','sendgridKey','notionToken','airtableToken','telegramToken','stripeKey']
+  ['slackToken','resendKey','sendgridKey','notionToken','airtableToken','telegramToken','stripeKey','replicateKey']
     .forEach(id=>{const el=$(id);if(el&&settings[id])el.value=settings[id];});
   // Restaurer URL backend
   if(settings.backendUrl){const el=$('backendUrl');if(el)el.value=settings.backendUrl;}
@@ -3057,19 +3062,9 @@ async function txGenPhoto(){
 
 async function txCallOneForPhoto(brief,type,format,demog,styles){
   const prompt=`Tu es ONE, l-IA de TELEMAX. Génère 3 variantes de prompts Stable Diffusion XL ultra-précis pour ce brief:
-
-TYPE: ${type}
-FORMAT: ${format}
-CIBLAGE: ${demog}
-STYLES: ${styles}
+TYPE: ${type} | FORMAT: ${format} | CIBLAGE: ${demog} | STYLES: ${styles}
 BRIEF: ${brief}
-
-Pour chaque variante, donne:
-- NOM (ex: "Variante Mystère")
-- PROMPT SD XL (en anglais, ultra-détaillé, 50-80 mots)
-- NEGATIVE PROMPT
-- RETOUR PDG ALEX VEXLER (ton de PDG exigeant, 1-2 phrases)
-
+Pour chaque variante: NOM, PROMPT SD XL (anglais, 50-80 mots, ultra-détaillé), NEGATIVE PROMPT, RETOUR PDG ALEX VEXLER.
 Réponds en JSON: {"variants":[{"name":"...","prompt":"...","negative":"...","feedback":"..."},...]}`;
   try{
     const raw=await callAPI(prompt,1500);
@@ -3077,10 +3072,92 @@ Réponds en JSON: {"variants":[{"name":"...","prompt":"...","negative":"...","fe
     const match=raw.match(/\{[\s\S]*\}/);
     if(match){
       const parsed=JSON.parse(match[0]);
-      txDisplayPhotoResult(parsed.variants||[]);return;
+      const variants=parsed.variants||[];
+      // Si clé Replicate → génère les vraies images
+      if(settings.replicateKey){
+        await txGenerateRealImages(variants);
+      } else {
+        txDisplayPhotoResult(variants);
+        showToast('i','💡 Ajoute ta clé Replicate dans Paramètres pour générer les vraies images !');
+      }
+      return;
     }
   }catch(e){}
   txShowPhotoFallback(brief,type,format);
+}
+
+// ── GÉNÉRATION RÉELLE IMAGES via Replicate ──
+async function txGenerateRealImages(variants){
+  showToast('i','🎨 Génération des vraies images via Replicate...');
+  const container=$('txPhotoVariants');
+  container.innerHTML='';
+  window.txVariants=variants;
+
+  for(let i=0;i<variants.length;i++){
+    const v=variants[i];
+    // Affiche placeholder pendant la génération
+    const card=document.createElement('div');
+    card.className='tx-variant';
+    card.id=`txvar_${i}`;
+    card.innerHTML=`
+      <div class="tx-variant-label">V${i+1} — ${v.name}</div>
+      <div style="width:100%;height:120px;background:var(--card);border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:6px">
+        <div class="tx-spinner" style="width:24px;height:24px;border-width:3px"></div>
+      </div>
+      <div style="font-size:10px;color:var(--dim)">Génération en cours...</div>`;
+    container.appendChild(card);
+
+    // Appel Replicate — modèle SDXL
+    try{
+      const r=await fetch('https://api.replicate.com/v1/models/stability-ai/sdxl/predictions',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':`Bearer ${settings.replicateKey}`},
+        body:JSON.stringify({input:{prompt:v.prompt,negative_prompt:v.negative||'blurry, low quality, watermark',width:1024,height:1024,num_inference_steps:30}})
+      });
+      const pred=await r.json();
+      if(pred.error)throw new Error(pred.error);
+
+      // Poll jusqu'à ce que l'image soit prête
+      const imgUrl=await txPollReplicate(pred.id||pred.urls?.get);
+      if(imgUrl){
+        card.innerHTML=`
+          <div class="tx-variant-label">V${i+1} — ${v.name}</div>
+          <img src="${imgUrl}" style="width:100%;border-radius:8px;margin-bottom:6px;cursor:pointer" onclick="txOpenImage('${imgUrl}')">
+          <div style="display:flex;gap:5px">
+            <button onclick="txDownloadImage('${imgUrl}','${v.name}')" style="flex:1;padding:5px;background:var(--grn);color:#0a0620;border:none;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer">⬇ Télécharger</button>
+            <button onclick="navigator.clipboard.writeText('${v.prompt.replace(/'/g,"\\'")}');showToast('s','📋 Prompt copié !')" style="flex:1;padding:5px;background:var(--card);border:1px solid var(--brd);color:var(--dim);border-radius:5px;font-size:10px;cursor:pointer">📋 Prompt</button>
+          </div>`;
+        showToast('s',`✅ Image V${i+1} générée !`);
+      }
+    }catch(err){
+      card.innerHTML=`<div class="tx-variant-label">V${i+1} — ${v.name}</div><div style="color:var(--red);font-size:11px">❌ ${err.message}</div>`;
+    }
+  }
+
+  const feedback=variants[0]?.feedback||'Envoyez en production.';
+  $('txPhotoFeedback').innerHTML=`<blockquote style="border-left:3px solid #ffd93d;padding-left:12px;color:#ffd93d;font-style:italic;margin:0">"${feedback}"<br><strong style="color:var(--dim);font-style:normal;font-size:11px">— Alex Vexler, PDG TELEMAX</strong></blockquote>`;
+  $('txPhotoResult').classList.add('show');
+}
+
+async function txPollReplicate(urlOrId){
+  const url=urlOrId.startsWith('http')?urlOrId:`https://api.replicate.com/v1/predictions/${urlOrId}`;
+  for(let i=0;i<60;i++){
+    await new Promise(r=>setTimeout(r,2000));
+    const r=await fetch(url,{headers:{'Authorization':`Bearer ${settings.replicateKey}`}});
+    const d=await r.json();
+    if(d.status==='succeeded')return d.output?.[0]||d.output;
+    if(d.status==='failed')throw new Error(d.error||'Génération échouée');
+  }
+  throw new Error('Timeout — génération trop longue');
+}
+
+function txOpenImage(url){
+  window.open(url,'_blank');
+}
+
+function txDownloadImage(url,name){
+  const a=document.createElement('a');a.href=url;a.download=`TELEMAX_${name.replace(/\s+/g,'_')}.png`;a.target='_blank';a.click();
+  showToast('s','⬇ Téléchargement lancé !');
 }
 
 function txShowPhotoFallback(brief,type,format){
@@ -3123,39 +3200,93 @@ async function txGenVideo(){
   $('txVideoResult').classList.remove('show');
   $('txVideoLoading').style.display='block';
   const steps=['txvs1','txvs2','txvs3','txvs4'];
-  const statuses=['Analyse du brief...','Génération Pika Labs 1.5...','Mixage musique & effets...','Export MP4 H.264...'];
-  for(let i=0;i<steps.length;i++){
-    txAnimSteps(steps,i);$('txVideoStatus').textContent=statuses[i];
-    await delay(800+Math.random()*600);
-  }
-  txAnimSteps(steps,4);$('txVideoLoading').style.display='none';
-  const dur=$('txVideoDuration').value;
-  const durSec=dur.includes('15')?'15s':dur.includes('30')?'30s':'60s';
-  $('txVideoDurOut').textContent=durSec;
-  if(settings.apiKey){
-    await txCallOneForVideo(brief);
+
+  // Étape 1 — ONE génère le prompt vidéo
+  txAnimSteps(steps,0);$('txVideoStatus').textContent='ONE génère le prompt vidéo...';
+  const videoPrompt=await txGenVideoPrompt(brief);
+
+  // Étape 2 — Génération réelle si clé Replicate
+  if(settings.replicateKey){
+    txAnimSteps(steps,1);$('txVideoStatus').textContent='Génération vidéo via Replicate (60-120s)...';
+    try{
+      const videoUrl=await txGenerateRealVideo(videoPrompt);
+      txAnimSteps(steps,3);$('txVideoLoading').style.display='none';
+      // Affiche la vraie vidéo
+      $('txVideoBody').innerHTML=`
+        <div style="margin-bottom:12px">
+          <video controls autoplay loop style="width:100%;border-radius:10px;max-height:300px">
+            <source src="${videoUrl}" type="video/mp4">
+          </video>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <button onclick="txDownloadVideo('${videoUrl}')" style="flex:1;padding:8px;background:var(--grn);color:#0a0620;border:none;border-radius:7px;font-weight:700;cursor:pointer">⬇ Télécharger MP4</button>
+          <button onclick="window.open('${videoUrl}','_blank')" style="flex:1;padding:8px;background:var(--card);border:1px solid var(--brd);color:var(--txt);border-radius:7px;cursor:pointer">🔗 Ouvrir</button>
+        </div>
+        <div style="font-size:11px;color:var(--dim)"><strong style="color:var(--acc)">Prompt utilisé :</strong> ${videoPrompt.slice(0,150)}...</div>`;
+      $('txVideoResult').classList.add('show');
+      showToast('s','🎬 Vidéo générée par Replicate !');
+    }catch(err){
+      txAnimSteps(steps,4);$('txVideoLoading').style.display='none';
+      $('txVideoBody').innerHTML=`<div style="color:var(--red);margin-bottom:10px">❌ Erreur Replicate : ${err.message}</div>${marked.parse(await txGenVideoMarkdown(brief))}`;
+      $('txVideoResult').classList.add('show');
+      showToast('e','❌ Erreur génération vidéo');
+    }
   } else {
-    txShowVideoFallback(brief,durSec);
+    // Pas de clé — affiche le prompt + guide
+    for(let i=1;i<steps.length;i++){txAnimSteps(steps,i);await new Promise(r=>setTimeout(r,600));}
+    $('txVideoLoading').style.display='none';
+    const md=await txGenVideoMarkdown(brief);
+    $('txVideoBody').innerHTML=marked.parse(md)+`<div style="margin-top:12px;padding:10px;background:rgba(180,94,255,.08);border:1px solid rgba(180,94,255,.2);border-radius:8px;font-size:12px"><strong style="color:var(--acc)">💡 Pour générer la vraie vidéo</strong><br>Ajoute ta clé Replicate dans <strong>Paramètres → Tokens → Replicate</strong></div>`;
+    $('txVideoResult').classList.add('show');
+    showToast('i','💡 Ajoute ta clé Replicate pour générer la vraie vidéo !');
   }
   btn.disabled=false;
 }
 
+async function txGenVideoPrompt(brief){
+  const p=`Génère un prompt vidéo cinématographique en anglais pour Stable Video Diffusion basé sur: ${brief}. 
+  Inclus: mouvement de caméra, éclairage, ambiance, style visuel. Maximum 200 mots. Réponds UNIQUEMENT avec le prompt en anglais, rien d'autre.`;
+  const raw=await callAPI(p,300);
+  return raw||brief;
+}
+
+async function txGenVideoMarkdown(brief){
+  const p=`Tu es Alex Vexler PDG TELEMAX. Pour ce brief vidéo: "${brief}", génère:
+1. PROMPT VIDÉO (anglais, pour Replicate/Runway)
+2. STORYBOARD (3 scènes)
+3. TON RETOUR PDG
+Format markdown.`;
+  return await callAPI(p,800)||`# Brief vidéo\n\n${brief}`;
+}
+
+async function txGenerateRealVideo(prompt){
+  // Utilise Stable Video Diffusion via Replicate
+  const r=await fetch('https://api.replicate.com/v1/models/stability-ai/stable-video-diffusion/predictions',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':`Bearer ${settings.replicateKey}`},
+    body:JSON.stringify({input:{
+      image:`https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=576&nologo=true`,
+      motion_bucket_id:127,
+      fps:24,
+      decoding_t:14
+    }})
+  });
+  const pred=await r.json();
+  if(pred.error)throw new Error(pred.error);
+  return await txPollReplicate(pred.id||pred.urls?.get);
+}
+
+function txDownloadVideo(url){
+  const a=document.createElement('a');a.href=url;a.download='TELEMAX_video.mp4';a.target='_blank';a.click();
+  showToast('s','⬇ Téléchargement vidéo lancé !');
+}
+
 async function txCallOneForVideo(brief){
-  const prompt=`Tu es Alex Vexler, PDG de TELEMAX. Génère un prompt vidéo ultra-précis pour Runway ML Gen-3 / Pika Labs basé sur ce brief:
-
-BRIEF: ${brief}
-
-Fournis:
-1. PROMPT VIDÉO (anglais, détaillé: mouvement caméra, éclairage, ambiance, effets)
-2. STORYBOARD (3-4 scènes en français, 1 ligne chacune)
-3. INSTRUCTIONS SOUS-TITRES (style, couleur, position)
-4. RETOUR PDG (ton Alex Vexler, exigeant et visionnaire)
-
-Format markdown avec titres clairs.`;
-  try{
-    const raw=await callAPI(prompt,1200);
-    $('txVideoBody').innerHTML=marked.parse(raw);
-    $('txVideoResult').classList.add('show');
+  const md=await txGenVideoMarkdown(brief);
+  $('txVideoBody').innerHTML=marked.parse(md);
+  $('txVideoResult').classList.add('show');
+  showToast('s','🎬 Prompt vidéo généré par ONE !');
+}
     showToast('s','🎬 Prompt vidéo généré par ONE !');
   }catch(e){txShowVideoFallback(brief,'30s');}
 }
