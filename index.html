@@ -3107,12 +3107,20 @@ async function txGenerateRealImages(variants){
       <div style="font-size:10px;color:var(--dim)">Génération en cours...</div>`;
     container.appendChild(card);
 
-    // Appel Replicate — modèle SDXL
+    // Appel Replicate — modèle Flux-2-Pro (meilleure qualité)
     try{
-      const r=await fetch('https://api.replicate.com/v1/models/stability-ai/sdxl/predictions',{
+      const r=await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-2-pro/predictions',{
         method:'POST',
         headers:{'Content-Type':'application/json','Authorization':`Bearer ${settings.replicateKey}`},
-        body:JSON.stringify({input:{prompt:v.prompt,negative_prompt:v.negative||'blurry, low quality, watermark',width:1024,height:1024,num_inference_steps:30}})
+        body:JSON.stringify({input:{
+          prompt:v.prompt,
+          negative_prompt:v.negative||'blurry, low quality, watermark',
+          resolution:'1 MP',
+          aspect_ratio:'1:1',
+          output_format:'webp',
+          output_quality:90,
+          safety_tolerance:2
+        }})
       });
       const pred=await r.json();
       if(pred.error)throw new Error(pred.error);
