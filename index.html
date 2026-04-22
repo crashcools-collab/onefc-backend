@@ -101,6 +101,7 @@ body{background:var(--bg);color:var(--txt);font-family:var(--fb);line-height:1.6
 .qa-btn.wf{background:rgba(77,199,255,.1);border-color:rgba(77,199,255,.3);color:var(--blu)}
 .input-row{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--brd);border-radius:22px;padding:4px 4px 4px 14px}
 .input-row:focus-within{border-color:var(--acc);box-shadow:0 0 0 2px rgba(180,94,255,.15)}
+.input-row.drag-over{border-color:var(--acc);box-shadow:0 0 0 3px rgba(180,94,255,.25);background:rgba(180,94,255,.05)}
 .mic-mini{width:36px;height:36px;border-radius:50%;border:none;background:transparent;color:var(--dim);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .mic-mini:hover{color:var(--acc);background:rgba(180,94,255,.1)}
 .mic-mini.listening{background:var(--hot);color:#fff;animation:micP 1s ease-in-out infinite}
@@ -714,11 +715,23 @@ body{background:var(--bg);color:var(--txt);font-family:var(--fb);line-height:1.6
       <button class="qa-btn wf" onclick="switchView('templates')">📦 Templates 1-clic →</button>
       <button class="qa-btn" style="background:rgba(255,107,0,.12);border-color:rgba(255,107,0,.35);color:#ff9a3c" onclick="loadTelemaxPrompt()">🎬 TELEMAX Vidéo Pro</button>
     </div>
-    <div class="input-row">
+    <div class="input-row" id="inputRow">
       <button class="mic-mini" id="micBtn" onclick="toggleMic($('inputField'),$('micBtn'))">🎤</button>
       <button class="mic-mini" id="stopSpeakBtn" onclick="synth&&synth.cancel();this.style.opacity='.4'" title="Arrêter la voix" style="font-size:14px;opacity:.4">🔇</button>
-      <textarea class="input-field" id="inputField" placeholder="Parle à ONE… (Entrée pour envoyer, Maj+Entrée pour saut de ligne)" rows="1" onkeydown="handleChatKey(event)" oninput="autoH(this)"></textarea>
+      <button class="mic-mini" onclick="$('imageUpload').click()" title="Envoyer une image" style="font-size:16px">📎</button>
+      <input type="file" id="imageUpload" accept="image/*" style="display:none" onchange="handleImageUpload(this)">
+      <textarea class="input-field" id="inputField" placeholder="Parle à ONE… (Entrée pour envoyer, Maj+Entrée pour saut de ligne)" rows="1" onkeydown="handleChatKey(event)" oninput="autoH(this)"
+        ondragover="event.preventDefault();this.closest('.input-row').classList.add('drag-over')"
+        ondragleave="this.closest('.input-row').classList.remove('drag-over')"
+        ondrop="handleImageDrop(event)"></textarea>
       <button class="send-btn" id="sendBtn" onclick="sendChat()">➤</button>
+    </div>
+    <!-- Preview image sélectionnée -->
+    <div id="imagePreview" style="display:none;padding:6px 4px 0;display:none">
+      <div style="position:relative;display:inline-block">
+        <img id="previewImg" style="max-height:80px;max-width:200px;border-radius:8px;border:1px solid var(--brd)">
+        <button onclick="clearImage()" style="position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;background:var(--hot);color:#fff;border:none;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center">✕</button>
+      </div>
     </div>
   </div>
 </div>
@@ -2054,11 +2067,33 @@ function addMsg(role,text){
   return b;
 }
 async function sendChat(){
-  const inp=$('inputField');const txt=inp.value.trim();if(!txt)return;
+  const inp=$('inputField');const txt=inp.value.trim();
+  const hasImage=!!currentImageBase64;
+  if(!txt&&!hasImage)return;
   const btn=$('sendBtn');inp.value='';inp.style.height='auto';btn.disabled=true;btn.textContent='…';
-  addMsg('user',txt);
-  chatHistory.push({role:'user',content:txt});
-  // Pas de provider ou pas de clé (sauf Ollama)
+
+  // Affiche le message user avec image si présente
+  const d=document.createElement('div');d.className='message user';
+  const b=document.createElement('div');b.className='bubble user';
+  if(hasImage){
+    b.innerHTML=`${txt?`<div style="margin-bottom:4px">${txt}</div>`:''}` + `<img src="data:${currentImageType};base64,${currentImageBase64}" style="max-width:200px;max-height:150px;border-radius:8px;display:block">`;
+  } else {
+    b.textContent=txt;
+  }
+  d.appendChild(b);$('chatInner').appendChild(d);scrollChat();
+
+  // Construit le contenu du message pour l'API
+  if(hasImage){
+    const imgContent=[
+      {type:'image',source:{type:'base64',media_type:currentImageType,data:currentImageBase64}},
+      {type:'text',text:txt||'Analyse cette image et décris ce que tu vois. Si c\'est une erreur ou un problème, aide-moi à le résoudre.'}
+    ];
+    chatHistory.push({role:'user',content:imgContent});
+    clearImage();
+  } else {
+    chatHistory.push({role:'user',content:txt});
+  }
+
   if(!settings.llmProvider){
     const bub=addMsg('bot','');const body=bub.querySelector('.bubble-body');
     const msg='⚙️ **Choisis ton provider IA dabord !**\n\nVa dans **Paramètres** → clique sur le provider de ton choix (Gemini et Groq sont gratuits !) puis colle ta clé API.';
@@ -3701,7 +3736,62 @@ Format : liste numérotée avec commandes en code. Court et pratique.`;
   }
 }
 
-// ═══ MENU MOBILE ═══
+// ═══ GESTION IMAGES ═══
+let currentImageBase64 = null;
+let currentImageType = null;
+
+function handleImageUpload(input){
+  const file = input.files[0];
+  if(!file) return;
+  loadImageFile(file);
+}
+
+function handleImageDrop(e){
+  e.preventDefault();
+  $('inputRow').classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if(!file || !file.type.startsWith('image/')) return;
+  loadImageFile(file);
+}
+
+function loadImageFile(file){
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const result = e.target.result;
+    currentImageBase64 = result.split(',')[1];
+    currentImageType = file.type;
+    // Affiche la preview
+    const preview = $('imagePreview');
+    const img = $('previewImg');
+    img.src = result;
+    preview.style.display = 'block';
+    showToast('s', `📎 Image chargée : ${file.name}`);
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearImage(){
+  currentImageBase64 = null;
+  currentImageType = null;
+  $('imagePreview').style.display = 'none';
+  $('imageUpload').value = '';
+}
+
+// Drag & drop global sur le canvas de chat
+document.addEventListener('dragover', e => {
+  if(e.dataTransfer.types.includes('Files')) e.preventDefault();
+});
+document.addEventListener('drop', e => {
+  e.preventDefault();
+  $('fileDragOverlay').classList.remove('show');
+  const file = Array.from(e.dataTransfer.files)[0];
+  if(!file) return;
+  if(file.type.startsWith('image/')){
+    loadImageFile(file);
+    switchView('chat');
+    showToast('i', '📎 Image glissée — ajoute un message et envoie !');
+  }
+});
 function toggleMobileMenu(){
   const menu=$('mobileMenu');const btn=$('hamburger');
   const isOpen=menu.classList.toggle('open');
