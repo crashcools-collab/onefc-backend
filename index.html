@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
 <title>ONE FlowCraft v1 ◆ IA × Automatisation</title>
 <meta name="application-name" content="ONE FlowCraft">
 <meta name="theme-color" content="#7c3aed">
@@ -494,6 +494,79 @@ body{background:var(--bg);color:var(--txt);font-family:var(--fb);line-height:1.6
 .at-wf-btn:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(0,230,147,.3)}
 .at-sep{height:1px;background:var(--brd);margin:16px 0}
 .at-generating{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--grn);padding:10px 0}
+
+/* ═══ HAMBURGER MENU MOBILE ═══ */
+.hamburger{display:none;flex-direction:column;gap:5px;cursor:pointer;padding:8px;border:none;background:transparent;flex-shrink:0}
+.hamburger span{width:22px;height:2px;background:var(--txt);border-radius:2px;transition:all .3s}
+.hamburger.open span:nth-child(1){transform:rotate(45deg) translate(5px,5px)}
+.hamburger.open span:nth-child(2){opacity:0}
+.hamburger.open span:nth-child(3){transform:rotate(-45deg) translate(5px,-5px)}
+.mobile-menu{display:none;position:fixed;inset:0;background:var(--bg);z-index:300;flex-direction:column;padding:20px}
+.mobile-menu.open{display:flex}
+.mm-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:30px}
+.mm-logo{font-family:var(--fh);font-size:20px;font-weight:900;background:linear-gradient(135deg,var(--acc),var(--blu));-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:3px}
+.mm-close{background:none;border:none;color:var(--dim);font-size:24px;cursor:pointer;padding:4px}
+.mm-tabs{display:flex;flex-direction:column;gap:6px;flex:1}
+.mm-tab{padding:16px 18px;border:1px solid var(--brd);background:var(--card);border-radius:12px;color:var(--txt);font-family:var(--fb);font-size:15px;font-weight:600;cursor:pointer;text-align:left;display:flex;align-items:center;gap:10px;transition:all .2s}
+.mm-tab.active{background:var(--umsg);border-color:var(--acc);color:#fff}
+.mm-tab:hover{border-color:var(--acc)}
+.mm-footer{padding-top:20px;border-top:1px solid var(--brd);display:flex;gap:10px;justify-content:center}
+
+/* ═══ RESPONSIVE MOBILE ═══ */
+@media(max-width:768px){
+  /* Topbar mobile */
+  .topbar{padding:8px 12px;gap:8px}
+  .tabs{display:none}
+  .hamburger{display:flex}
+  .logo{font-size:14px;letter-spacing:1px}
+  .status-pill{display:none}
+  .wf-name-inp{max-width:100px;font-size:11px}
+  #stopVoiceBtn,#stopSpeakBtn{display:none}
+
+  /* Cache les boutons topbar en mobile */
+  .tb-right .tbtn:not(.run):not(.save){display:none}
+  .tbtn{padding:5px 8px;font-size:10px}
+
+  /* Chat mobile */
+  .chat-wrap{padding:12px}
+  .bubble{max-width:92%}
+  .bubble.bot{max-width:96%}
+  .quick-actions{gap:5px}
+  .qa-btn{font-size:11px;padding:5px 9px}
+  .inputbar{padding:6px 10px 10px}
+  .input-row{padding:3px 3px 3px 10px}
+  .input-field{font-size:14px}
+  .send-btn{width:42px;height:42px}
+
+  /* Flow mobile — cache les panneaux latéraux */
+  .flow-left{display:none}
+  .flow-right{display:none}
+  .elog{left:0;right:0}
+
+  /* Settings mobile */
+  .settings-scroll{padding:14px}
+  .provider-grid{grid-template-columns:repeat(3,1fr)}
+
+  /* BaseIA mobile */
+  .at-page{padding:16px}
+  .at-grid{grid-template-columns:1fr}
+  .at-feature-grid{grid-template-columns:1fr 1fr}
+
+  /* TELEMAX mobile */
+  .tx-body{padding:14px}
+  .tx-grid{grid-template-columns:1fr}
+
+  /* Templates mobile */
+  .tpl-page{padding:16px}
+  .tpl-grid{grid-template-columns:1fr}
+
+  /* Cours mobile */
+  .sidebar{width:100%;min-width:unset}
+  .cours-container{flex-direction:column}
+
+  /* Login mobile */
+  .login-box{padding:28px 20px}
+}
 /* ═══ LOGIN SCREEN ═══ */
 #loginScreen{position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center;background-image:radial-gradient(ellipse at top left,rgba(180,94,255,.2),transparent 50%),radial-gradient(ellipse at bottom right,rgba(77,199,255,.12),transparent 50%)}
 .login-box{background:var(--panel);border:1px solid var(--brd);border-radius:20px;padding:42px 48px;width:100%;max-width:400px;text-align:center;box-shadow:0 24px 80px rgba(0,0,0,.7)}
@@ -575,6 +648,9 @@ body{background:var(--bg);color:var(--txt);font-family:var(--fb);line-height:1.6
 
 <!-- ═══ TOPBAR ═══ -->
 <div class="topbar">
+  <button class="hamburger" id="hamburger" onclick="toggleMobileMenu()">
+    <span></span><span></span><span></span>
+  </button>
   <div class="logo">ONE<span style="-webkit-text-fill-color:var(--blu);font-size:12px;letter-spacing:1px;margin-left:2px">FC</span></div>
   <div class="logo-dot"></div>
   <div class="tabs">
@@ -596,6 +672,28 @@ body{background:var(--bg);color:var(--txt);font-family:var(--fb);line-height:1.6
     <button class="tbtn" onclick="clearAllNodes()">🗑 Vider</button>
     <button class="tbtn save" onclick="saveWF()">💾 Sauvegarder</button>
     <button class="tbtn run" onclick="runWF()">▶ Exécuter</button>
+  </div>
+</div>
+
+<!-- ═══ MENU MOBILE ═══ -->
+<div class="mobile-menu" id="mobileMenu">
+  <div class="mm-header">
+    <div class="mm-logo">ONE FC</div>
+    <button class="mm-close" onclick="toggleMobileMenu()">✕</button>
+  </div>
+  <div class="mm-tabs">
+    <button class="mm-tab active" onclick="mobileNav('chat')">💬 ONE Chat</button>
+    <button class="mm-tab" onclick="mobileNav('templates')">⚡ Templates</button>
+    <button class="mm-tab" onclick="mobileNav('flow')">🔧 FlowCraft</button>
+    <button class="mm-tab" onclick="mobileNav('telemax')">🎬 TELEMAX</button>
+    <button class="mm-tab" onclick="mobileNav('baseia')">🗃️ BaseIA</button>
+    <button class="mm-tab" onclick="mobileNav('cours')">📚 Cours</button>
+    <button class="mm-tab" onclick="mobileNav('settings')">⚙️ Paramètres</button>
+  </div>
+  <div class="mm-footer">
+    <button class="tbtn" onclick="synth&&synth.cancel();toggleMobileMenu()">🔇 Stop voix</button>
+    <button class="tbtn save" onclick="saveWF();toggleMobileMenu()">💾 Sauvegarder</button>
+    <button class="tbtn run" onclick="runWF();toggleMobileMenu()">▶ Exécuter</button>
   </div>
 </div>
 
@@ -3603,7 +3701,28 @@ Format : liste numérotée avec commandes en code. Court et pratique.`;
   }
 }
 
-// ═══ BACKEND RAILWAY ═══
+// ═══ MENU MOBILE ═══
+function toggleMobileMenu(){
+  const menu=$('mobileMenu');const btn=$('hamburger');
+  const isOpen=menu.classList.toggle('open');
+  btn.classList.toggle('open',isOpen);
+  document.body.style.overflow=isOpen?'hidden':'';
+}
+function mobileNav(view){
+  toggleMobileMenu();
+  switchView(view);
+  // Met à jour les tabs du menu mobile
+  document.querySelectorAll('.mm-tab').forEach(t=>t.classList.remove('active'));
+  const activeTab=document.querySelector(`.mm-tab[onclick*="${view}"]`);
+  if(activeTab)activeTab.classList.add('active');
+}
+// Ferme le menu si on clique en dehors
+document.addEventListener('click',e=>{
+  const menu=$('mobileMenu');
+  if(menu.classList.contains('open')&&!menu.contains(e.target)&&!$('hamburger').contains(e.target)){
+    toggleMobileMenu();
+  }
+});
 async function testBackend(){
   const url=settings.backendUrl;
   const el=$('backendStatus');
