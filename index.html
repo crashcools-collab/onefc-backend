@@ -3049,28 +3049,25 @@ function txAnimSteps(ids,active){
 async function txGenPhoto(){
   const brief=$('txPhotoBrief').value.trim();
   if(!brief){showToast('e','❌ Remplis le brief d\'abord !');return;}
+  if(!settings.apiKey&&settings.llmProvider!=='ollama'){
+    showToast('e','❌ Configure ta clé IA dans Paramètres !');
+    txShowPhotoFallback(brief,$('txPhotoType').value,$('txPhotoFormat').value);
+    return;
+  }
   const btn=$('txPhotoBtn');btn.disabled=true;
   $('txPhotoEmpty').style.display='none';
   $('txPhotoResult').classList.remove('show');
   $('txPhotoLoading').style.display='block';
-  const steps=['txps1','txps2','txps3','txps4'];
-  const statuses=['Analyse du brief...','Génération Stable Diffusion XL...','Post-production & branding...','Export final...'];
-  for(let i=0;i<steps.length;i++){
-    txAnimSteps(steps,i);$('txPhotoStatus').textContent=statuses[i];
-    await delay(600+Math.random()*400);
-  }
-  txAnimSteps(steps,4);
-  $('txPhotoLoading').style.display='none';
-  // Generate via ONE AI if key available
+  $('txPhotoStatus').textContent='ONE génère les prompts...';
+
   const type=$('txPhotoType').value;
   const format=$('txPhotoFormat').value;
   const demog=$('txPhotoDemog').value;
   const activeTags=[...$('txPhotoStyles').querySelectorAll('.tx-tag.active')].map(t=>t.textContent).join(', ');
-  if(settings.apiKey){
-    await txCallOneForPhoto(brief,type,format,demog,activeTags);
-  } else {
-    txShowPhotoFallback(brief,type,format);
-  }
+
+  // Appel IA direct sans attendre l'animation
+  await txCallOneForPhoto(brief,type,format,demog,activeTags);
+  $('txPhotoLoading').style.display='none';
   btn.disabled=false;
 }
 
