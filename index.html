@@ -1782,7 +1782,13 @@ AI : "ONE AI" · "Résumé IA" · "Classification IA"
 - Toujours en français sauf les prompts techniques (anglais)
 - Markdown riche : tableaux, code, listes structurées
 - Chaque réponse = action immédiate possible pour Cédric
-- Mode PDG Alex Vexler : "C'est exactement ce qu'on attend. Envoyez en production."`;
+- Mode PDG Alex Vexler : "C'est exactement ce qu'on attend. Envoyez en production."
+
+🚫 RÈGLES ABSOLUES :
+- Ne JAMAIS créer de liens vers des sites externes inventés (telemax.studio, flowcraft.io, etc. n'existent pas)
+- Ne JAMAIS inventer des URLs — si tu veux référencer TELEMAX, dis juste "va dans l'onglet TELEMAX"
+- Ne JAMAIS dire "clique ici" avec un faux lien
+- Pour naviguer dans l'appli : "va dans l'onglet X" ou "clique sur FlowCraft"`;
 
 // ═══ TEMPLATES PRÉDÉFINIS ═══
 const WF_TEMPLATES=[
@@ -3072,19 +3078,25 @@ async function txGenPhoto(){
 }
 
 async function txCallOneForPhoto(brief,type,format,demog,styles){
-  const prompt=`Tu es ONE, l-IA de TELEMAX. Génère 3 variantes de prompts Stable Diffusion XL ultra-précis pour ce brief:
-TYPE: ${type} | FORMAT: ${format} | CIBLAGE: ${demog} | STYLES: ${styles}
-BRIEF: ${brief}
-Pour chaque variante: NOM, PROMPT SD XL (anglais, 50-80 mots, ultra-détaillé), NEGATIVE PROMPT, RETOUR PDG ALEX VEXLER.
-Réponds en JSON: {"variants":[{"name":"...","prompt":"...","negative":"...","feedback":"..."},...]}`;
+  const prompt=`Tu es un expert en prompts Stable Diffusion. Pour ce brief: "${brief}"
+Style: ${styles} | Format: ${format}
+
+Génère 3 prompts courts et percutants (max 30 mots chacun en anglais).
+IMPORTANT: Prompts courts = meilleure qualité sur Pollinations.
+
+Réponds UNIQUEMENT en JSON valide:
+{"variants":[
+  {"name":"Variante 1","prompt":"...","negative":"blurry, ugly, low quality","feedback":"..."},
+  {"name":"Variante 2","prompt":"...","negative":"blurry, ugly, low quality","feedback":"..."},
+  {"name":"Variante 3","prompt":"...","negative":"blurry, ugly, low quality","feedback":"..."}
+]}`;
   try{
-    const raw=await callAPI(prompt,1500);
+    const raw=await callAPI(prompt,800);
     if(!raw||raw.startsWith('⚠️')){txShowPhotoFallback(brief,type,format);return;}
     const match=raw.match(/\{[\s\S]*\}/);
     if(match){
       const parsed=JSON.parse(match[0]);
       const variants=parsed.variants||[];
-      // Génère les vraies images via Pollinations (option 2) — toujours actif
       await txGenerateRealImages(variants);
       return;
     }
@@ -3127,25 +3139,25 @@ async function txGenerateRealImages(variants){
 
       // ══ OPTION 2 : Pollinations.ai (gratuit, sans clé, pas de CORS) ══
       const seed=Math.floor(Math.random()*99999);
-      const imgUrl=`https://image.pollinations.ai/prompt/${encodeURIComponent(v.prompt)}?width=768&height=1024&seed=${seed}&nologo=true&enhance=true&model=flux`;
+      // Prompt enrichi automatiquement pour meilleure qualité
+      const qualityBoost='masterpiece, best quality, highly detailed, sharp focus, professional photography, 8k';
+      const finalPrompt=`${v.prompt}, ${qualityBoost}`;
+      const imgUrl=`https://image.pollinations.ai/prompt/${encodeURIComponent(finalPrompt)}?width=896&height=1152&seed=${seed}&nologo=true&enhance=true&model=flux-pro`;
 
-      // Attend que l'image soit chargée
-      await new Promise((resolve)=>{
-        const img=new Image();
-        img.onload=resolve;
-        img.onerror=resolve; // continue même si erreur
-        img.src=imgUrl;
-        setTimeout(resolve,20000); // timeout 20s
-      });
-
+      // Affiche l'image directement — elle se charge progressivement
       card.innerHTML=`
         <div class="tx-variant-label">V${i+1} — ${v.name}</div>
-        <img src="${imgUrl}" style="width:100%;border-radius:8px;margin-bottom:6px;cursor:pointer" onclick="txOpenImage('${imgUrl}')" onerror="this.style.display='none'">
+        <img src="${imgUrl}" 
+          style="width:100%;border-radius:8px;margin-bottom:6px;cursor:pointer;min-height:80px;background:var(--card)" 
+          onclick="txOpenImage('${imgUrl}')"
+          onload="showToast('s','✅ Image V${i+1} prête !')"
+          onerror="this.parentElement.querySelector('.img-err').style.display='block';this.style.display='none'">
+        <div class="img-err" style="display:none;color:var(--red);font-size:11px;padding:8px">❌ Erreur chargement image</div>
         <div style="display:flex;gap:5px;margin-top:4px">
           <button onclick="txDownloadImage('${imgUrl}','${v.name}')" style="flex:1;padding:5px;background:var(--grn);color:#0a0620;border:none;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer">⬇ Télécharger</button>
           <button onclick="navigator.clipboard.writeText(${JSON.stringify(v.prompt)});showToast('s','📋 Prompt copié !')" style="flex:1;padding:5px;background:var(--card);border:1px solid var(--brd);color:var(--dim);border-radius:5px;font-size:10px;cursor:pointer">📋 Prompt</button>
+          <button onclick="window.open('${imgUrl}','_blank')" style="padding:5px 8px;background:var(--card);border:1px solid var(--brd);color:var(--dim);border-radius:5px;font-size:10px;cursor:pointer">🔗</button>
         </div>`;
-      showToast('s',`✅ Image V${i+1} générée !`);
     }catch(err){
       card.innerHTML=`<div class="tx-variant-label">V${i+1} — ${v.name}</div><div style="color:var(--red);font-size:11px">❌ ${err.message||'Erreur'}</div>`;
     }
