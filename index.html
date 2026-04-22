@@ -3084,29 +3084,23 @@ Réponds en JSON: {"variants":[{"name":"...","prompt":"...","negative":"...","fe
     if(match){
       const parsed=JSON.parse(match[0]);
       const variants=parsed.variants||[];
-      // Si clé Replicate → génère les vraies images
-      if(settings.replicateKey){
-        await txGenerateRealImages(variants);
-      } else {
-        txDisplayPhotoResult(variants);
-        showToast('i','💡 Ajoute ta clé Replicate dans Paramètres pour générer les vraies images !');
-      }
+      // Génère les vraies images via Pollinations (option 2) — toujours actif
+      await txGenerateRealImages(variants);
       return;
     }
   }catch(e){}
   txShowPhotoFallback(brief,type,format);
 }
 
-// ── GÉNÉRATION RÉELLE IMAGES via Replicate ──
+// ── GÉNÉRATION IMAGES — Option 2: Pollinations (gratuit) / Option 1: Replicate (commenté) ──
 async function txGenerateRealImages(variants){
-  showToast('i','🎨 Génération des vraies images via Replicate...');
+  showToast('i','🎨 Génération des images via Pollinations.ai...');
   const container=$('txPhotoVariants');
   container.innerHTML='';
   window.txVariants=variants;
 
   for(let i=0;i<variants.length;i++){
     const v=variants[i];
-    // Affiche placeholder pendant la génération
     const card=document.createElement('div');
     card.className='tx-variant';
     card.id=`txvar_${i}`;
@@ -3118,39 +3112,42 @@ async function txGenerateRealImages(variants){
       <div style="font-size:10px;color:var(--dim)">Génération en cours...</div>`;
     container.appendChild(card);
 
-    // Appel Replicate via backend Railway (évite CORS)
     try{
-      let imgUrl;
-      if(settings.backendUrl){
-        // Via backend Railway — route dédiée Replicate
-        showToast('i',`🎨 Génération image V${i+1} via Railway...`);
-        const r=await fetch(`${settings.backendUrl}/replicate`,{
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({
-            endpoint:'black-forest-labs/flux-2-pro',
-            apiKey:settings.replicateKey,
-            input:{prompt:v.prompt,negative_prompt:v.negative||'blurry, low quality, watermark',resolution:'1 MP',aspect_ratio:'1:1',output_format:'webp',output_quality:90,safety_tolerance:2}
-          })
-        });
-        const d=await r.json();
-        if(!d.ok)throw new Error(d.message||'Erreur Replicate');
-        imgUrl=Array.isArray(d.output)?d.output[0]:d.output;
-      } else {
-        throw new Error('Backend Railway non configuré — va dans Paramètres');
-      }
-      if(!imgUrl)throw new Error('Pas d\'image retournée');
+      // ══ OPTION 1 : Replicate Flux-2-Pro (meilleure qualité) ══
+      // Décommenter quand le backend Railway supporte /replicate
+      // if(settings.replicateKey && settings.backendUrl){
+      //   const r=await fetch(`${settings.backendUrl}/replicate`,{
+      //     method:'POST',headers:{'Content-Type':'application/json'},
+      //     body:JSON.stringify({endpoint:'black-forest-labs/flux-2-pro',apiKey:settings.replicateKey,
+      //       input:{prompt:v.prompt,negative_prompt:v.negative||'blurry,low quality',resolution:'1 MP',aspect_ratio:'1:1',output_format:'webp',output_quality:90}})
+      //   });
+      //   const d=await r.json();
+      //   imgUrl=Array.isArray(d.output)?d.output[0]:d.output;
+      // }
+
+      // ══ OPTION 2 : Pollinations.ai (gratuit, sans clé, pas de CORS) ══
+      const seed=Math.floor(Math.random()*99999);
+      const imgUrl=`https://image.pollinations.ai/prompt/${encodeURIComponent(v.prompt)}?width=768&height=1024&seed=${seed}&nologo=true&enhance=true&model=flux`;
+
+      // Attend que l'image soit chargée
+      await new Promise((resolve)=>{
+        const img=new Image();
+        img.onload=resolve;
+        img.onerror=resolve; // continue même si erreur
+        img.src=imgUrl;
+        setTimeout(resolve,20000); // timeout 20s
+      });
 
       card.innerHTML=`
-          <div class="tx-variant-label">V${i+1} — ${v.name}</div>
-          <img src="${imgUrl}" style="width:100%;border-radius:8px;margin-bottom:6px;cursor:pointer" onclick="txOpenImage('${imgUrl}')">
-          <div style="display:flex;gap:5px">
-            <button onclick="txDownloadImage('${imgUrl}','${v.name}')" style="flex:1;padding:5px;background:var(--grn);color:#0a0620;border:none;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer">⬇ Télécharger</button>
-            <button onclick="navigator.clipboard.writeText('${v.prompt.replace(/'/g,"\\'")}');showToast('s','📋 Prompt copié !')" style="flex:1;padding:5px;background:var(--card);border:1px solid var(--brd);color:var(--dim);border-radius:5px;font-size:10px;cursor:pointer">📋 Prompt</button>
-          </div>`;
+        <div class="tx-variant-label">V${i+1} — ${v.name}</div>
+        <img src="${imgUrl}" style="width:100%;border-radius:8px;margin-bottom:6px;cursor:pointer" onclick="txOpenImage('${imgUrl}')" onerror="this.style.display='none'">
+        <div style="display:flex;gap:5px;margin-top:4px">
+          <button onclick="txDownloadImage('${imgUrl}','${v.name}')" style="flex:1;padding:5px;background:var(--grn);color:#0a0620;border:none;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer">⬇ Télécharger</button>
+          <button onclick="navigator.clipboard.writeText(${JSON.stringify(v.prompt)});showToast('s','📋 Prompt copié !')" style="flex:1;padding:5px;background:var(--card);border:1px solid var(--brd);color:var(--dim);border-radius:5px;font-size:10px;cursor:pointer">📋 Prompt</button>
+        </div>`;
       showToast('s',`✅ Image V${i+1} générée !`);
     }catch(err){
-      card.innerHTML=`<div class="tx-variant-label">V${i+1} — ${v.name}</div><div style="color:var(--red);font-size:11px">❌ ${err.message}</div>`;
+      card.innerHTML=`<div class="tx-variant-label">V${i+1} — ${v.name}</div><div style="color:var(--red);font-size:11px">❌ ${err.message||'Erreur'}</div>`;
     }
   }
 
