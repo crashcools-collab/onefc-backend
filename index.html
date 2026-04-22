@@ -1159,7 +1159,7 @@ body{background:var(--bg);color:var(--txt);font-family:var(--fb);line-height:1.6
               <button class="tx-btn secondary" onclick="txExport('photo')">📤 Exporter</button>
               <button class="tx-btn secondary" onclick="txUploadTikTok()">🎵 Uploader TikTok</button>
               <button class="tx-btn secondary" onclick="txSendToFlow()">⚡ Envoyer FlowCraft</button>
-              <button class="tx-btn secondary" onclick="txOpenDownloads()" title="Ouvrir le dossier Téléchargements">📁 Ouvrir dossier</button>
+              <button class="tx-btn secondary" onclick="txSetMode('gallery',document.getElementById('galleryTab'))">🖼️ Voir ma Galerie</button>
             </div>
           </div>
           <div id="txPhotoEmpty" style="text-align:center;padding:40px;color:var(--dim);font-size:13px">
@@ -1258,7 +1258,7 @@ body{background:var(--bg);color:var(--txt);font-family:var(--fb);line-height:1.6
             <div style="display:flex;gap:8px;flex-wrap:wrap">
               <button class="tx-btn secondary" onclick="txExport('video')">📤 Télécharger</button>
               <button class="tx-btn primary" onclick="txUploadTikTok()">🎵 Publier TikTok</button>
-              <button class="tx-btn secondary" onclick="txOpenDownloads()" title="Ouvrir le dossier Téléchargements">📁 Ouvrir dossier</button>
+              <button class="tx-btn secondary" onclick="txSetMode('gallery',document.getElementById('galleryTab'))">🖼️ Voir ma Galerie</button>
             </div>
           </div>
           <div id="txVideoEmpty" style="text-align:center;padding:40px;color:var(--dim);font-size:13px">
@@ -3163,12 +3163,15 @@ async function txGenerateRealImages(variants){
       const imgUrl=`https://image.pollinations.ai/prompt/${encodeURIComponent(finalPrompt)}?width=896&height=1152&seed=${seed}&nologo=true&enhance=true&model=flux-pro`;
 
       // Affiche l'image directement — elle se charge progressivement
+      // Sauvegarde dans la galerie immédiatement
+      txSaveToGallery(imgUrl, v.name, 'photo');
+
       card.innerHTML=`
         <div class="tx-variant-label">V${i+1} — ${v.name}</div>
         <img src="${imgUrl}" 
           style="width:100%;border-radius:8px;margin-bottom:6px;cursor:pointer;min-height:80px;background:var(--card)" 
           onclick="txOpenImage('${imgUrl}')"
-          onload="showToast('s','✅ Image V${i+1} prête !');txSaveToGallery('${imgUrl}','${v.name.replace(/'/g,'')}','photo')"
+          onload="this.style.minHeight='auto'"
           onerror="this.parentElement.querySelector('.img-err').style.display='block';this.style.display='none'">
         <div class="img-err" style="display:none;color:var(--red);font-size:11px;padding:8px">❌ Erreur chargement image</div>
         <div style="display:flex;gap:5px;margin-top:4px">
