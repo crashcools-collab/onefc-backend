@@ -3121,46 +3121,37 @@ async function txGenerateRealImages(variants){
       <div style="font-size:10px;color:var(--dim)">Génération en cours...</div>`;
     container.appendChild(card);
 
-    // Appel Replicate via backend Railway (évite CORS) ou direct
+    // Appel Replicate via backend Railway (évite CORS)
     try{
-      let pred;
+      let imgUrl;
       if(settings.backendUrl){
-        // Via backend Railway — pas de CORS
-        const r=await fetch(`${settings.backendUrl}/proxy`,{
+        // Via backend Railway — route dédiée Replicate
+        showToast('i',`🎨 Génération image V${i+1} via Railway...`);
+        const r=await fetch(`${settings.backendUrl}/replicate`,{
           method:'POST',
-          headers:{'Content-Type':'application/json','x-onefc-key':settings.replicateKey||''},
+          headers:{'Content-Type':'application/json'},
           body:JSON.stringify({
-            url:'https://api.replicate.com/v1/models/black-forest-labs/flux-2-pro/predictions',
-            method:'POST',
-            headers:{'Authorization':`Bearer ${settings.replicateKey}`,'Content-Type':'application/json'},
-            body:{input:{prompt:v.prompt,negative_prompt:v.negative||'blurry, low quality, watermark',resolution:'1 MP',aspect_ratio:'1:1',output_format:'webp',output_quality:90,safety_tolerance:2}}
+            endpoint:'black-forest-labs/flux-2-pro',
+            apiKey:settings.replicateKey,
+            input:{prompt:v.prompt,negative_prompt:v.negative||'blurry, low quality, watermark',resolution:'1 MP',aspect_ratio:'1:1',output_format:'webp',output_quality:90,safety_tolerance:2}
           })
         });
         const d=await r.json();
-        pred=d.data;
+        if(!d.ok)throw new Error(d.message||'Erreur Replicate');
+        imgUrl=Array.isArray(d.output)?d.output[0]:d.output;
       } else {
-        // Direct (fonctionne en local)
-        const r=await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-2-pro/predictions',{
-          method:'POST',
-          headers:{'Content-Type':'application/json','Authorization':`Bearer ${settings.replicateKey}`},
-          body:JSON.stringify({input:{prompt:v.prompt,negative_prompt:v.negative||'blurry, low quality, watermark',resolution:'1 MP',aspect_ratio:'1:1',output_format:'webp',output_quality:90,safety_tolerance:2}})
-        });
-        pred=await r.json();
+        throw new Error('Backend Railway non configuré — va dans Paramètres');
       }
-      if(pred?.error)throw new Error(pred.error);
+      if(!imgUrl)throw new Error('Pas d\'image retournée');
 
-      // Poll jusqu'à ce que l'image soit prête
-      const imgUrl=await txPollReplicate(pred.id||pred.urls?.get);
-      if(imgUrl){
-        card.innerHTML=`
+      card.innerHTML=`
           <div class="tx-variant-label">V${i+1} — ${v.name}</div>
           <img src="${imgUrl}" style="width:100%;border-radius:8px;margin-bottom:6px;cursor:pointer" onclick="txOpenImage('${imgUrl}')">
           <div style="display:flex;gap:5px">
             <button onclick="txDownloadImage('${imgUrl}','${v.name}')" style="flex:1;padding:5px;background:var(--grn);color:#0a0620;border:none;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer">⬇ Télécharger</button>
             <button onclick="navigator.clipboard.writeText('${v.prompt.replace(/'/g,"\\'")}');showToast('s','📋 Prompt copié !')" style="flex:1;padding:5px;background:var(--card);border:1px solid var(--brd);color:var(--dim);border-radius:5px;font-size:10px;cursor:pointer">📋 Prompt</button>
           </div>`;
-        showToast('s',`✅ Image V${i+1} générée !`);
-      }
+      showToast('s',`✅ Image V${i+1} générée !`);
     }catch(err){
       card.innerHTML=`<div class="tx-variant-label">V${i+1} — ${v.name}</div><div style="color:var(--red);font-size:11px">❌ ${err.message}</div>`;
     }
@@ -3304,30 +3295,19 @@ Format markdown.`;
 
 async function txGenerateRealVideo(prompt){
   const imageUrl=`https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=576&nologo=true`;
-  const body={input:{image:imageUrl,motion_bucket_id:127,fps:24,decoding_t:14}};
-  let pred;
-  if(settings.backendUrl){
-    const r=await fetch(`${settings.backendUrl}/proxy`,{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        url:'https://api.replicate.com/v1/models/stability-ai/stable-video-diffusion/predictions',
-        method:'POST',
-        headers:{'Authorization':`Bearer ${settings.replicateKey}`,'Content-Type':'application/json'},
-        body
-      })
-    });
-    const d=await r.json();pred=d.data;
-  } else {
-    const r=await fetch('https://api.replicate.com/v1/models/stability-ai/stable-video-diffusion/predictions',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':`Bearer ${settings.replicateKey}`},
-      body:JSON.stringify(body)
-    });
-    pred=await r.json();
-  }
-  if(pred?.error)throw new Error(pred.error);
-  return await txPollReplicate(pred.id||pred.urls?.get);
+  if(!settings.backendUrl)throw new Error('Backend Railway non configuré — va dans Paramètres');
+  const r=await fetch(`${settings.backendUrl}/replicate`,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      endpoint:'stability-ai/stable-video-diffusion',
+      apiKey:settings.replicateKey,
+      input:{image:imageUrl,motion_bucket_id:127,fps:24,decoding_t:14}
+    })
+  });
+  const d=await r.json();
+  if(!d.ok)throw new Error(d.message||'Erreur Replicate vidéo');
+  return Array.isArray(d.output)?d.output[0]:d.output;
 }
 
 function txDownloadVideo(url){
