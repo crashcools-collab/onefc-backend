@@ -721,8 +721,8 @@ body{background:var(--bg);color:var(--txt);font-family:var(--fb);line-height:1.6
       <button class="mic-mini" onclick="$('imageUpload').click()" title="Envoyer une image" style="font-size:16px">📎</button>
       <input type="file" id="imageUpload" accept="image/*" style="display:none" onchange="handleImageUpload(this)">
       <textarea class="input-field" id="inputField" placeholder="Parle à ONE… (Entrée pour envoyer, Maj+Entrée pour saut de ligne)" rows="1" onkeydown="handleChatKey(event)" oninput="autoH(this)"
-        ondragover="event.preventDefault();this.closest('.input-row').classList.add('drag-over')"
-        ondragleave="this.closest('.input-row').classList.remove('drag-over')"
+        ondragover="event.preventDefault();event.stopPropagation();$('inputRow').classList.add('drag-over')"
+        ondragleave="event.stopPropagation();$('inputRow').classList.remove('drag-over')"
         ondrop="handleImageDrop(event)"></textarea>
       <button class="send-btn" id="sendBtn" onclick="sendChat()">➤</button>
     </div>
@@ -1698,7 +1698,7 @@ body{background:var(--bg);color:var(--txt);font-family:var(--fb);line-height:1.6
 </div><!-- /main -->
 
 <div class="saved-indicator" id="savedIndicator">✓ Sauvegardé !</div>
-<div class="file-drag-overlay" id="fileDragOverlay"><div class="file-drag-icon">📎</div><div class="file-drag-text">LÂCHE ICI</div><div class="file-drag-sub">PDF · Images · Texte</div></div>
+<div class="file-drag-overlay" id="fileDragOverlay"><div class="file-drag-icon">📎</div><div class="file-drag-text">LÂCHE ICI</div><div class="file-drag-sub">Images · PDF · Texte · ou Ctrl+V pour coller</div></div>
 <div class="modal-backdrop" id="ffModal"><div class="modal"><h3>🎤 Activer le micro Firefox</h3><p style="font-size:13px;color:var(--dim);line-height:1.7;margin-bottom:10px">Active dans about:config :</p><ol><li><strong>media.webspeech.recognition.enable</strong> → <span class="ok">true</span></li><li><strong>media.webspeech.recognition.force_enable</strong> → <span class="ok">true</span></li></ol><button class="btn-primary" style="width:100%;margin-top:12px" onclick="$('ffModal').classList.remove('show')">OK</button></div></div>
 <div class="ctx" id="ctx">
   <div class="cxi" onclick="ctxAdd('trigger')">⚡ Trigger</div>
@@ -3295,9 +3295,6 @@ async function txCallOneForVideo(brief){
   $('txVideoResult').classList.add('show');
   showToast('s','🎬 Prompt vidéo généré par ONE !');
 }
-    showToast('s','🎬 Prompt vidéo généré par ONE !');
-  }catch(e){txShowVideoFallback(brief,'30s');}
-}
 
 function txShowVideoFallback(brief,dur){
   $('txVideoBody').innerHTML=marked.parse(`## 🎬 Prompt Runway ML / Pika Labs
@@ -3929,6 +3926,25 @@ document.addEventListener('drop', e => {
     loadImageFile(file);
     switchView('chat');
     showToast('i', '📎 Image glissée — ajoute un message et envoie !');
+  }
+});
+
+// ═══ CTRL+V — COLLER UNE IMAGE ═══
+document.addEventListener('paste', e => {
+  const items = e.clipboardData?.items;
+  if(!items) return;
+  for(const item of items){
+    if(item.type.startsWith('image/')){
+      e.preventDefault();
+      const file = item.getAsFile();
+      if(file){
+        loadImageFile(file);
+        switchView('chat');
+        showToast('s', '📋 Image collée ! Ajoute un message et envoie.');
+        setTimeout(()=>{ const f=$('inputField'); if(f)f.focus(); }, 150);
+      }
+      break;
+    }
   }
 });
 function toggleMobileMenu(){
