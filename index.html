@@ -1079,6 +1079,7 @@ body{background:var(--bg);color:var(--txt);font-family:var(--fb);line-height:1.6
           <button class="tx-mode-tab" onclick="txSetMode('pipeline',this)">🔄 Pipeline Auto</button>
           <button class="tx-mode-tab" onclick="txSetMode('ab',this)">🧪 A/B Testing</button>
           <button class="tx-mode-tab" onclick="txSetMode('prompt',this)">◆ Prompt PDG</button>
+          <button class="tx-mode-tab" onclick="txSetMode('gallery',this)" id="galleryTab">🖼️ Ma Galerie <span id="galleryCount" style="background:rgba(255,59,130,.3);border-radius:10px;padding:1px 6px;font-size:10px">0</span></button>
         </div>
       </div>
 
@@ -1449,11 +1450,27 @@ body{background:var(--bg);color:var(--txt);font-family:var(--fb);line-height:1.6
       </div>
 
     </div>
+
+      <!-- ═══ GALERIE ═══ -->
+      <div id="tx-gallery" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+          <div style="font-family:var(--fh);font-size:12px;font-weight:700;color:#ff3b82;letter-spacing:2px">🖼️ MA GALERIE TELEMAX</div>
+          <div style="display:flex;gap:8px">
+            <span id="galleryInfo" style="font-size:11px;color:var(--dim)">0 médias sauvegardés</span>
+            <button onclick="txClearGallery()" style="padding:4px 10px;background:transparent;border:1px solid var(--red);color:var(--red);border-radius:6px;font-size:11px;cursor:pointer">🗑 Vider</button>
+          </div>
+        </div>
+        <div id="galleryGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">
+          <div style="grid-column:1/-1;text-align:center;padding:60px;color:var(--dim);font-size:13px">
+            <div style="font-size:3rem;opacity:.1;margin-bottom:10px">🖼️</div>
+            Génère des photos ou vidéos — elles apparaîtront ici automatiquement
+          </div>
+        </div>
+      </div>
+
+    </div>
   </div>
 </div>
-
-
-<!-- ═══ BASE IA VIEW ═══ -->
 <div class="view" data-view="baseia">
   <div class="at-page">
 
@@ -3033,9 +3050,10 @@ function txSetMode(mode,btn){
   txCurrentMode=mode;
   document.querySelectorAll('.tx-mode-tab').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
-  ['photo','video','pipeline','ab','prompt'].forEach(m=>{
+  ['photo','video','pipeline','ab','prompt','gallery'].forEach(m=>{
     const el=$('tx-'+m);if(el)el.style.display=m===mode?'':'none';
   });
+  if(mode==='gallery')txRenderGallery();
 }
 
 // Tag toggle
@@ -3150,7 +3168,7 @@ async function txGenerateRealImages(variants){
         <img src="${imgUrl}" 
           style="width:100%;border-radius:8px;margin-bottom:6px;cursor:pointer;min-height:80px;background:var(--card)" 
           onclick="txOpenImage('${imgUrl}')"
-          onload="showToast('s','✅ Image V${i+1} prête !')"
+          onload="showToast('s','✅ Image V${i+1} prête !');txSaveToGallery('${imgUrl}','${v.name.replace(/'/g,'')}','photo')"
           onerror="this.parentElement.querySelector('.img-err').style.display='block';this.style.display='none'">
         <div class="img-err" style="display:none;color:var(--red);font-size:11px;padding:8px">❌ Erreur chargement image</div>
         <div style="display:flex;gap:5px;margin-top:4px">
@@ -3501,17 +3519,9 @@ function txLoadExample(type){
 // ── UTILS ──
 function txExport(type){showToast('s',`📤 Export ${type} — fichier prêt (simulation) !`);}
 function txOpenDownloads(){
-  // Sur PC — ouvre l'explorateur sur le dossier Téléchargements
-  showToast('i','📁 Tes fichiers sont dans le dossier Téléchargements');
-  // Astuce : crée un lien invisible vers le dossier downloads
-  try{
-    // Chrome/Edge — ouvre le gestionnaire de téléchargements
-    window.open('chrome://downloads','_blank');
-  }catch(e){}
-  // Fallback — affiche le chemin
-  setTimeout(()=>{
-    showToast('i','📁 PC : C:\\Users\\TOI\\Downloads — Mac : ~/Downloads');
-  },1500);
+  showToast('s','📁 Tes fichiers sont dans Téléchargements !');
+  // Ouvre le gestionnaire de téléchargements du navigateur
+  try{ window.open('about:downloads','_blank'); }catch(e){}
 }
 function txUploadTikTok(){showToast('i','🎵 Upload TikTok — Configure l\'API TikTok Business dans Paramètres');}
 function txSendToFlow(){
@@ -4013,6 +4023,67 @@ document.addEventListener('click',e=>{
     toggleMobileMenu();
   }
 });
+// ═══ GALERIE TELEMAX ═══
+function txSaveToGallery(url,name,type='photo'){
+  try{
+    const gallery=JSON.parse(localStorage.getItem('onefc_gallery')||'[]');
+    gallery.unshift({url,name,type,date:new Date().toLocaleString('fr-FR'),id:Date.now()});
+    if(gallery.length>50)gallery.pop();
+    localStorage.setItem('onefc_gallery',JSON.stringify(gallery));
+    txUpdateGalleryCount();
+    showToast('s','🖼️ Sauvegardé dans ta galerie !');
+  }catch(e){}
+}
+function txUpdateGalleryCount(){
+  try{
+    const gallery=JSON.parse(localStorage.getItem('onefc_gallery')||'[]');
+    const count=$('galleryCount');
+    if(count)count.textContent=gallery.length;
+  }catch(e){}
+}
+function txRenderGallery(){
+  try{
+    const gallery=JSON.parse(localStorage.getItem('onefc_gallery')||'[]');
+    const grid=$('galleryGrid');
+    const info=$('galleryInfo');
+    if(info)info.textContent=`${gallery.length} média${gallery.length>1?'s':''} sauvegardé${gallery.length>1?'s':''}`;
+    if(!gallery.length){
+      grid.innerHTML=`<div style="grid-column:1/-1;text-align:center;padding:60px;color:var(--dim);font-size:13px"><div style="font-size:3rem;opacity:.1;margin-bottom:10px">🖼️</div>Génère des photos — elles apparaîtront ici automatiquement</div>`;
+      return;
+    }
+    grid.innerHTML=gallery.map(item=>`
+      <div style="background:var(--panel);border:1px solid var(--brd);border-radius:10px;overflow:hidden">
+        ${item.type==='photo'
+          ?`<img src="${item.url}" style="width:100%;aspect-ratio:3/4;object-fit:cover;display:block">`
+          :`<video src="${item.url}" style="width:100%;aspect-ratio:16/9;object-fit:cover;display:block" controls></video>`}
+        <div style="padding:8px">
+          <div style="font-size:11px;font-weight:600;color:var(--txt);margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${item.name}</div>
+          <div style="font-size:10px;color:var(--dim);margin-bottom:6px">${item.date}</div>
+          <div style="display:flex;gap:5px">
+            <button onclick="txDownloadImage('${item.url}','${item.name}')" style="flex:1;padding:4px;background:var(--grn);color:#0a0620;border:none;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer">⬇ Télécharger</button>
+            <button onclick="window.open('${item.url}','_blank')" style="flex:1;padding:4px;background:var(--card);border:1px solid var(--brd);color:var(--dim);border-radius:5px;font-size:10px;cursor:pointer">🔗 Ouvrir</button>
+            <button onclick="txDeleteFromGallery(${item.id})" style="padding:4px 8px;background:transparent;border:1px solid var(--red);color:var(--red);border-radius:5px;font-size:10px;cursor:pointer">✕</button>
+          </div>
+        </div>
+      </div>`).join('');
+  }catch(e){}
+}
+function txDeleteFromGallery(id){
+  try{
+    let gallery=JSON.parse(localStorage.getItem('onefc_gallery')||'[]');
+    gallery=gallery.filter(i=>i.id!==id);
+    localStorage.setItem('onefc_gallery',JSON.stringify(gallery));
+    txRenderGallery();txUpdateGalleryCount();
+  }catch(e){}
+}
+function txClearGallery(){
+  if(!confirm('Vider toute la galerie ?'))return;
+  localStorage.removeItem('onefc_gallery');
+  txRenderGallery();txUpdateGalleryCount();
+  showToast('s','🗑 Galerie vidée');
+}
+setTimeout(txUpdateGalleryCount,500);
+
 async function testBackend(){
   const url=settings.backendUrl;
   const el=$('backendStatus');
