@@ -3256,85 +3256,68 @@ function txSelectVariant(i){
 async function txGenVideo(){
   const brief=$('txVideoBrief').value.trim();
   if(!brief){showToast('e','❌ Remplis le brief vidéo !');return;}
+  if(!settings.apiKey&&settings.llmProvider!=='ollama'){showToast('e','❌ Configure ta clé IA dans Paramètres !');return;}
   const btn=$('txVideoBtn');btn.disabled=true;
   $('txVideoEmpty').style.display='none';
   $('txVideoResult').classList.remove('show');
   $('txVideoLoading').style.display='block';
   const steps=['txvs1','txvs2','txvs3','txvs4'];
-
-  // Étape 1 — ONE génère le prompt vidéo
-  txAnimSteps(steps,0);$('txVideoStatus').textContent='ONE génère le prompt vidéo...';
+  txAnimSteps(steps,0);$('txVideoStatus').textContent='ONE génère le prompt cinématographique...';
   const videoPrompt=await txGenVideoPrompt(brief);
-
-  // Étape 2 — Génération réelle si clé Replicate
-  if(settings.replicateKey){
-    txAnimSteps(steps,1);$('txVideoStatus').textContent='Génération vidéo via Replicate (60-120s)...';
-    try{
-      const videoUrl=await txGenerateRealVideo(videoPrompt);
-      txAnimSteps(steps,3);$('txVideoLoading').style.display='none';
-      // Affiche la vraie vidéo
-      $('txVideoBody').innerHTML=`
-        <div style="margin-bottom:12px">
-          <video controls autoplay loop style="width:100%;border-radius:10px;max-height:300px">
-            <source src="${videoUrl}" type="video/mp4">
-          </video>
-        </div>
-        <div style="display:flex;gap:8px;margin-bottom:12px">
-          <button onclick="txDownloadVideo('${videoUrl}')" style="flex:1;padding:8px;background:var(--grn);color:#0a0620;border:none;border-radius:7px;font-weight:700;cursor:pointer">⬇ Télécharger MP4</button>
-          <button onclick="window.open('${videoUrl}','_blank')" style="flex:1;padding:8px;background:var(--card);border:1px solid var(--brd);color:var(--txt);border-radius:7px;cursor:pointer">🔗 Ouvrir</button>
-        </div>
-        <div style="font-size:11px;color:var(--dim)"><strong style="color:var(--acc)">Prompt utilisé :</strong> ${videoPrompt.slice(0,150)}...</div>`;
-      $('txVideoResult').classList.add('show');
-      showToast('s','🎬 Vidéo générée par Replicate !');
-    }catch(err){
-      txAnimSteps(steps,4);$('txVideoLoading').style.display='none';
-      $('txVideoBody').innerHTML=`<div style="color:var(--red);margin-bottom:10px">❌ Erreur Replicate : ${err.message}</div>${marked.parse(await txGenVideoMarkdown(brief))}`;
-      $('txVideoResult').classList.add('show');
-      showToast('e','❌ Erreur génération vidéo');
-    }
-  } else {
-    // Pas de clé — affiche le prompt + guide
-    for(let i=1;i<steps.length;i++){txAnimSteps(steps,i);await new Promise(r=>setTimeout(r,600));}
-    $('txVideoLoading').style.display='none';
-    const md=await txGenVideoMarkdown(brief);
-    $('txVideoBody').innerHTML=marked.parse(md)+`<div style="margin-top:12px;padding:10px;background:rgba(180,94,255,.08);border:1px solid rgba(180,94,255,.2);border-radius:8px;font-size:12px"><strong style="color:var(--acc)">💡 Pour générer la vraie vidéo</strong><br>Ajoute ta clé Replicate dans <strong>Paramètres → Tokens → Replicate</strong></div>`;
+  txAnimSteps(steps,1);$('txVideoStatus').textContent='Génération vidéo via Pollinations (30-60s)...';
+  try{
+    const videoUrl=await txGeneratePollinationsVideo(videoPrompt);
+    txAnimSteps(steps,3);$('txVideoLoading').style.display='none';
+    txSaveToGallery(videoUrl,brief.slice(0,30),'video');
+    $('txVideoBody').innerHTML=`<div style="margin-bottom:12px"><video controls autoplay loop style="width:100%;border-radius:10px;max-height:300px" src="${videoUrl}">Votre navigateur ne supporte pas la vidéo.</video></div><div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap"><button onclick="txDownloadVideo('${videoUrl}')" style="flex:1;padding:8px;background:var(--grn);color:#0a0620;border:none;border-radius:7px;font-weight:700;cursor:pointer;min-width:120px">⬇ Télécharger MP4</button><button onclick="window.open('${videoUrl}','_blank')" style="flex:1;padding:8px;background:var(--card);border:1px solid var(--brd);color:var(--txt);border-radius:7px;cursor:pointer;min-width:100px">🔗 Ouvrir</button><button onclick="txSetMode('gallery',document.getElementById('galleryTab'))" style="flex:1;padding:8px;background:var(--card);border:1px solid var(--brd);color:var(--dim);border-radius:7px;cursor:pointer;min-width:100px">🖼️ Ma Galerie</button></div><div style="font-size:11px;color:var(--dim)"><strong style="color:var(--acc)">Prompt :</strong> ${videoPrompt.slice(0,150)}...</div>`;
     $('txVideoResult').classList.add('show');
-    showToast('i','💡 Ajoute ta clé Replicate pour générer la vraie vidéo !');
+    showToast('s','🎬 Vidéo générée avec Pollinations !');
+  }catch(err){
+    txAnimSteps(steps,4);$('txVideoLoading').style.display='none';
+    const md=await txGenVideoMarkdown(brief);
+    $('txVideoBody').innerHTML=`<div style="color:var(--red);margin-bottom:10px;font-size:12px">❌ ${err.message}</div>${marked.parse(md)}`;
+    $('txVideoResult').classList.add('show');
+    showToast('e','❌ Erreur — prompt généré à la place');
   }
   btn.disabled=false;
 }
 
 async function txGenVideoPrompt(brief){
-  const p=`Génère un prompt vidéo cinématographique en anglais pour Stable Video Diffusion basé sur: ${brief}. 
-  Inclus: mouvement de caméra, éclairage, ambiance, style visuel. Maximum 200 mots. Réponds UNIQUEMENT avec le prompt en anglais, rien d'autre.`;
+  const p=`Génère un prompt vidéo cinématographique en anglais pour Pollinations Seedance basé sur: ${brief}. Inclus: mouvement de caméra, éclairage, ambiance, style visuel. Maximum 150 mots. Réponds UNIQUEMENT avec le prompt en anglais, rien d'autre.`;
   const raw=await callAPI(p,300);
   return raw||brief;
 }
 
 async function txGenVideoMarkdown(brief){
-  const p=`Tu es Alex Vexler PDG TELEMAX. Pour ce brief vidéo: "${brief}", génère:
-1. PROMPT VIDÉO (anglais, pour Replicate/Runway)
-2. STORYBOARD (3 scènes)
-3. TON RETOUR PDG
-Format markdown.`;
+  const p=`Tu es Alex Vexler PDG TELEMAX. Pour ce brief vidéo: "${brief}", génère: 1. PROMPT VIDÉO (anglais) 2. STORYBOARD (3 scènes) 3. TON RETOUR PDG. Format markdown.`;
   return await callAPI(p,800)||`# Brief vidéo\n\n${brief}`;
 }
 
-async function txGenerateRealVideo(prompt){
-  const imageUrl=`https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=576&nologo=true`;
-  if(!settings.backendUrl)throw new Error('Backend Railway non configuré — va dans Paramètres');
-  const r=await fetch(`${settings.backendUrl}/replicate`,{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({
-      endpoint:'stability-ai/stable-video-diffusion',
-      apiKey:settings.replicateKey,
-      input:{image:imageUrl,motion_bucket_id:127,fps:24,decoding_t:14}
-    })
-  });
-  const d=await r.json();
-  if(!d.ok)throw new Error(d.message||'Erreur Replicate vidéo');
-  return Array.isArray(d.output)?d.output[0]:d.output;
+async function txGeneratePollinationsVideo(prompt){
+  const seed=Math.floor(Math.random()*99999);
+  // Essai POST d'abord
+  try{
+    const r=await fetch('https://gen.pollinations.ai/video',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({prompt,model:'seedance',width:1024,height:576,duration:5,seed})
+    });
+    if(r.ok){
+      const ct=r.headers.get('content-type')||'';
+      if(ct.includes('application/json')){const d=await r.json();return d.url||d.video_url||d.output;}
+      const blob=await r.blob();
+      if(blob.size>1000)return URL.createObjectURL(blob);
+    }
+  }catch(e){}
+  // Fallback GET
+  const url=`https://gen.pollinations.ai/video/${encodeURIComponent(prompt)}?model=seedance&width=1024&height=576&seed=${seed}`;
+  const r2=await fetch(url);
+  if(!r2.ok)throw new Error(`Pollinations vidéo : ${r2.status} — service temporairement indisponible`);
+  const ct=r2.headers.get('content-type')||'';
+  if(ct.includes('video')||ct.includes('octet')){const blob=await r2.blob();return URL.createObjectURL(blob);}
+  const d=await r2.json().catch(()=>({}));
+  if(d.url||d.video_url)return d.url||d.video_url;
+  throw new Error('Format de réponse inattendu de Pollinations');
 }
 
 function txDownloadVideo(url){
